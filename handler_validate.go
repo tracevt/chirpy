@@ -3,15 +3,28 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 )
+
+func containsBadWords(s string) bool {
+	if s == "kerfuffle" {
+		return true
+	} else if s == "sharbert" {
+		return true
+	} else if s == "fornax" {
+		return true
+	}
+
+	return false
+}
 
 func handleChirpsValidate(w http.ResponseWriter, r *http.Request) {
 	type message struct {
 		Body string `json:"body"`
 	}
 
-	type validMessage struct {
-		Valid bool `json:"valid"`
+	type cleanMessage struct {
+		CleanedBody string `json:"cleaned_body"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -28,7 +41,16 @@ func handleChirpsValidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, validMessage{
-		Valid: true,
+	splitMsg := strings.Split(params.Body, " ")
+
+	for idx, component := range splitMsg {
+		if containsBadWords(strings.ToLower(component)) {
+			splitMsg[idx] = "****"
+		}
+	}
+
+	joinMsg := strings.Join(splitMsg, " ")
+	respondWithJSON(w, http.StatusOK, cleanMessage{
+		CleanedBody: joinMsg,
 	})
 }
