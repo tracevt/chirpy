@@ -4,28 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/tracevt/chirpy/internal/auth"
-	"github.com/tracevt/chirpy/internal/database"
 )
 
-type User struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
-}
-
-func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
-	type userData struct {
+func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request) {
+	type loginCredentials struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
-	params := userData{}
+	params := loginCredentials{}
 	err := decoder.Decode(&params)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
@@ -42,20 +32,17 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hashedPassword, err := auth.HashPassword(params.Password)
+	user, err := cfg.db.GetUserByEmail(r.Context(), params.Email)
 
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't secure password", err)
+		respondWithError(w, http.StatusUnauthorized, "incorrect email or password", err)
 		return
 	}
 
-	user, err := cfg.db.CreateUser(r.Context(), database.CreateUserParams{
-		Email:          params.Email,
-		HashedPassword: hashedPassword,
-	})
+	noMatch := auth.CheckPasswordHash(user.HashedPassword, params.Password)
 
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't create user", err)
+	if noMatch != nil {
+		respondWithError(w, http.StatusUnauthorized, "incorrect email or password", noMatch)
 		return
 	}
 
@@ -66,5 +53,5 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 		Email:     user.Email,
 	}
 
-	respondWithJSON(w, http.StatusCreated, jsonUser)
+	respondWithJSON(w, http.StatusOK, jsonUser)
 }
