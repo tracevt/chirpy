@@ -16,22 +16,29 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
 	platform       string
+	secret         string
 }
 
 func main() {
 	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
 	platform := os.Getenv("PLATFORM")
+	secret := os.Getenv("SECRET")
 	db, err := sql.Open("postgres", dbURL)
 
 	if err != nil {
 		log.Fatal("Error opening a database connection")
 	}
 
+	if secret == "" {
+		log.Fatal("Provide a secret to encode JWTs in")
+	}
+
 	apiCfg := &apiConfig{
 		fileserverHits: atomic.Int32{},
 		db:             database.New(db),
 		platform:       platform,
+		secret:         secret,
 	}
 
 	mux := http.NewServeMux()
@@ -44,6 +51,8 @@ func main() {
 	mux.HandleFunc("POST /api/chirps", apiCfg.handleChirps)
 	mux.HandleFunc("POST /api/users", apiCfg.createUser)
 	mux.HandleFunc("POST /api/login", apiCfg.login)
+	mux.HandleFunc("POST /api/refresh", apiCfg.refresh)
+	mux.HandleFunc("POST /api/revoke", apiCfg.revoke)
 
 	s := &http.Server{
 		Addr:    ":8080",

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tracevt/chirpy/internal/auth"
 	"github.com/tracevt/chirpy/internal/database"
 )
 
@@ -33,13 +34,27 @@ func containsBadWords(s string) bool {
 
 func (cfg *apiConfig) handleChirps(w http.ResponseWriter, r *http.Request) {
 	type message struct {
-		Body   string    `json:"body"`
-		UserID uuid.UUID `json:"user_id"`
+		Body string `json:"body"`
+	}
+
+	// Validate if the Token is valid
+	bearerToken, err := auth.GetBearerToken(r.Header)
+
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Please provide an auth token", err)
+		return
+	}
+
+	userIDFromToken, err := auth.ValidateJWT(bearerToken, cfg.secret)
+
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Couldn't validate token", err)
+		return
 	}
 
 	decoder := json.NewDecoder(r.Body)
 	params := message{}
-	err := decoder.Decode(&params)
+	err = decoder.Decode(&params)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
 		return
@@ -48,11 +63,6 @@ func (cfg *apiConfig) handleChirps(w http.ResponseWriter, r *http.Request) {
 	const maxChirpLength = 140
 	if len(params.Body) > maxChirpLength {
 		respondWithError(w, http.StatusBadRequest, "Chirp is too long", nil)
-		return
-	}
-
-	if params.UserID.String() == "" {
-		respondWithError(w, http.StatusBadRequest, "Please provide the user that will post the chirp", nil)
 		return
 	}
 
@@ -68,7 +78,7 @@ func (cfg *apiConfig) handleChirps(w http.ResponseWriter, r *http.Request) {
 
 	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
 		Body:   joinMsg,
-		UserID: params.UserID,
+		UserID: userIDFromToken,
 	})
 
 	if err != nil {
