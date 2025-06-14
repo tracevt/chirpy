@@ -27,6 +27,11 @@ type UserWithToken struct {
 	RefreshToken string    `json:"refresh_token"`
 }
 
+type UserCredentials struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
 func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 	type userData struct {
 		Email    string `json:"email"`
@@ -76,4 +81,64 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusCreated, jsonUser)
+}
+
+func (cfg *apiConfig) updateUser(w http.ResponseWriter, r *http.Request) {
+	// Check for the token in the headers
+	token, err := auth.GetBearerToken(r.Header)
+
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Please provide an auth token", err)
+		return
+	}
+
+	userID, err := auth.ValidateJWT(token, cfg.secret)
+
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Couldn't validate token", err)
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := UserCredentials{}
+	err = decoder.Decode(&params)
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
+		return
+	}
+
+	if params.Email == "" || params.Password == "" {
+		respondWithError(w, http.StatusBadRequest, "Please provide email and/or password", err)
+		return
+	}
+
+	newHashedPassword, err := auth.HashPassword(params.Password)
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't secure password", err)
+		return
+	}
+
+	updateParams := &database.UpdateUserParams{
+		Email:          params.Email,
+		HashedPassword: newHashedPassword,
+		ID:             userID,
+	}
+
+	updatedUser, err := cfg.db.UpdateUser(r.Context(), *updateParams)
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't update user", err)
+		return
+	}
+
+	userResponse := &User{
+		ID:        updatedUser.ID,
+		Email:     updatedUser.Email,
+		CreatedAt: updatedUser.CreatedAt,
+		UpdatedAt: updatedUser.UpdatedAt,
+	}
+
+	respondWithJSON(w, http.StatusOK, userResponse)
 }
