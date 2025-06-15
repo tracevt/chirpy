@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -98,8 +99,34 @@ func (cfg *apiConfig) handleChirps(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *apiConfig) getChirps(w http.ResponseWriter, r *http.Request) {
-	chirps, err := cfg.db.GetChirps(r.Context())
+	// Check for author_id
+	author := r.URL.Query().Get("author_id")
 
+	// sort direction
+	sortDirection := "asc"
+	sortDirectionParam := r.URL.Query().Get("sort")
+	if sortDirectionParam == "desc" {
+		sortDirection = "desc"
+	}
+
+	if author != "" {
+		authorUUID, err := uuid.Parse(author)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "Author ID in the wrong format", err)
+			return
+		}
+
+		chirps, err := cfg.db.GetChirpsByAuthor(r.Context(), authorUUID)
+
+		parseChirps(chirps, err, w, sortDirection)
+	} else {
+		chirps, err := cfg.db.GetChirps(r.Context())
+
+		parseChirps(chirps, err, w, sortDirection)
+	}
+}
+
+func parseChirps(chirps []database.Chirp, err error, w http.ResponseWriter, sortDirection string) {
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't retrieve chirps", err)
 		return
@@ -117,6 +144,13 @@ func (cfg *apiConfig) getChirps(w http.ResponseWriter, r *http.Request) {
 
 		jsonChirps = append(jsonChirps, *t)
 	}
+
+	sort.Slice(jsonChirps, func(i, j int) bool {
+		if sortDirection == "desc" {
+			return jsonChirps[i].CreatedAt.After(jsonChirps[j].CreatedAt)
+		}
+		return jsonChirps[i].CreatedAt.Before(jsonChirps[j].CreatedAt)
+	})
 
 	respondWithJSON(w, http.StatusOK, jsonChirps)
 }
